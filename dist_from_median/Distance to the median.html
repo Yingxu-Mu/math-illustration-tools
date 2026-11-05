@@ -31,6 +31,8 @@ p.sub{margin:0 0 18px;color:var(--mute);max-width:62ch}
 .bar{position:absolute;bottom:40px;left:18%;right:18%;background:var(--bar);border-radius:4px 4px 0 0;transition:height .9s ease,background .4s,box-shadow .4s}
 .bar i{position:absolute;top:4px;left:0;right:0;text-align:center;font:600 13px system-ui,sans-serif;font-style:normal}
 .col.med .bar{box-shadow:0 0 0 3px var(--med)}
+.col{cursor:pointer}
+.col.rem .bar{background:var(--bad);color:#fff}
 .col.new .bar{background:var(--new);color:#fff}
 .stem{position:absolute;left:calc(50% - 2px);width:4px;border-radius:2px;transition:bottom 1s ease,height 1s ease,opacity .4s;z-index:2}
 .stem.up{background:var(--up)}.stem.dn{background:var(--dn)}
@@ -53,7 +55,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--med);outline-of
 <body>
 <main>
 <h1>How far is every element from the median?</h1>
-<p class="sub">Bars are kept in sorted order. The orange and blue stems measure each element’s distance to the median. Add a number and watch the median move and every distance change.</p>
+<p class="sub">Bars are kept in sorted order. The orange and blue stems measure each element’s distance to the median. Add a number and watch the median move and every distance change. Click any bar to remove it, or clear everything and build the array up from zero.</p>
 <div class="stats">
 <div class="stat"><small>Median</small><b id="sMed">–</b></div>
 <div class="stat sum"><small>Sum of |x − median|</small><b id="sSum">0</b><span class="d" id="sD"></span></div>
@@ -62,11 +64,13 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--med);outline-of
 <div id="wrap"><div id="chart"><div id="base"></div><div id="medline"><span id="medlbl"></span></div></div></div>
 <div id="cap"></div>
 <div class="ctl">
-<label for="inp">New value (1–60)</label>
+<label for="inp">Value (1–60)</label>
 <input id="inp" type="number" min="1" max="60" value="55">
 <button class="p" id="add">Add element</button>
 <button id="rnd">Random value</button>
-<button id="rst">Reset</button>
+<button id="rmv">Remove value</button>
+<button id="clr">Clear all</button>
+<button id="rst">Reset to example</button>
 </div>
 <div class="key"><span><s style="background:var(--med)"></s>median</span><span><s style="background:var(--up)"></s>above median</span><span><s style="background:var(--dn)"></s>below median</span><span><s style="background:var(--new)"></s>new element</span><span style="color:var(--bad)">▲ distance grew</span><span style="color:var(--good)">▼ distance shrank</span></div>
 </main>
@@ -86,6 +90,7 @@ function makeNode(it){
   const c=document.createElement('div');c.className='col';c.style.opacity=0;
   c.innerHTML='<div class="bar"><i></i></div><div class="stem"></div><div class="chip"><span></span></div><div class="delta"></div>';
   c.querySelector('i').textContent=it.v;
+  c.title='Click to remove '+it.v;c.onclick=()=>remove(it.id);
   chart.appendChild(c);nodes[it.id]={el:c,d:null};return nodes[it.id];
 }
 // order: array of items in display order; m: median; showDist: ids shown with distances
@@ -116,7 +121,7 @@ function layout(order,m,opt={}){
     }else{stem.style.opacity=0;chip.style.opacity=0;stem.style.height='0px';stem.style.bottom=(BASE+it.v*S)+'px'}
     if(!opt.deltas)dl.classList.remove('on');
   });
-  medline.style.bottom=(BASE+m*S)+'px';
+  medline.style.bottom=(BASE+m*S)+'px';medline.style.display=n?'':'none';
   $('medlbl').textContent='median '+fmt(m);
 }
 function commitDistances(m){Object.keys(nodes).forEach(id=>{const it=items.find(x=>x.id==id);if(it)nodes[id].d=Math.abs(it.v-m)})}
@@ -138,13 +143,23 @@ function reset(){
   $('sD').classList.remove('on');
   cap('Start: '+s.map(x=>x.v).join(', ')+'. The median is <b>'+fmt(m)+'</b>. Distances sum to <b>'+fmt(sumShown)+'</b>. Pick a value and press “Add element”.');
 }
+const BTNS=['add','rnd','rmv','clr','rst'];
+function busyOn(){busy=true;BTNS.forEach(i=>$(i).disabled=true)}
+function busyOff(){busy=false;BTNS.forEach(i=>$(i).disabled=false);$('inp').value=1+Math.floor(Math.random()*MAXV)}
 async function add(v){
   if(busy)return;v=Math.round(+v);
   if(!(v>=1&&v<=MAXV)){cap('Enter a whole number from 1 to '+MAXV+'.');return}
   if(items.length>=14){cap('That is plenty of bars. Press Reset to start over.');return}
-  busy=true;['add','rnd','rst'].forEach(i=>$(i).disabled=true);$('sD').classList.remove('on');
+  busyOn();$('sD').classList.remove('on');
   const oldSorted=sortItems(items), oldM=median(oldSorted), oldSum=total(oldM);
   const it={id:nextId++,v};
+  if(!items.length){
+    items.push(it);
+    cap('First element: <b>'+v+'</b> is its own median, so its distance is 0.');
+    layout([it],v,{dist:true,markMedian:true,deltas:true,newId:it.id});
+    setStats(v);tween(0,0,10);commitDistances(v);
+    await wait(1200);busyOff();return;
+  }
   // 1. new element arrives at the right end
   cap('Adding <b>'+v+'</b>. It arrives at the end of the array, outside the sorted order.');
   layout([...oldSorted,it],oldM,{dist:true,markMedian:true,hideId:it.id,newId:it.id});
@@ -165,12 +180,47 @@ async function add(v){
   const added=Math.abs(v-m);
   cap('The median moved from '+fmt(oldM)+' to <b>'+fmt(m)+'</b>, so every existing element’s distance changed (badges under the bars). The new element adds <b>'+fmt(added)+'</b>. Total: <b>'+fmt(oldSum)+' → '+fmt(newSum)+'</b>.');
   commitDistances(m);
-  busy=false;['add','rnd','rst'].forEach(i=>$(i).disabled=false);
-  $('inp').value=1+Math.floor(Math.random()*MAXV);
+  busyOff();
+}
+async function remove(id){
+  if(busy)return;
+  const it=items.find(x=>x.id===id);if(!it)return;
+  busyOn();$('sD').classList.remove('on');
+  const oldM=median(sortItems(items)), oldSum=total(oldM);
+  cap('Removing <b>'+it.v+'</b> from the array.');
+  const nd=nodes[id];
+  layout(sortItems(items),oldM,{dist:true,markMedian:true});
+  nd.el.classList.add('rem');
+  await wait(1100);
+  items=items.filter(x=>x.id!==id);
+  nd.el.style.opacity=0;nd.el.style.pointerEvents='none';delete nodes[id];setTimeout(()=>nd.el.remove(),700);
+  const s=sortItems(items), m=median(s), newSum=total(m);
+  layout(s,m,{dist:true,markMedian:true,deltas:true});
+  setStats(m);tween(oldSum,newSum);
+  const diff=newSum-oldSum, dd=$('sD');
+  dd.textContent=(diff>0?'▲ +':diff<0?'▼ −':'±')+fmt(Math.abs(diff));dd.style.color=diff>0?'var(--bad)':diff<0?'var(--good)':'var(--mute)';dd.classList.add('on');
+  await wait(1200);
+  if(!s.length)cap('Removed <b>'+it.v+'</b>. The array is empty, so there is no median and the sum is 0.');
+  else cap('Removed <b>'+it.v+'</b> (its distance was '+fmt(Math.abs(it.v-oldM))+'). The median moved from '+fmt(oldM)+' to <b>'+fmt(m)+'</b>, so the remaining distances shifted. Total: <b>'+fmt(oldSum)+' → '+fmt(newSum)+'</b>.');
+  commitDistances(m);
+  busyOff();
+}
+function clearAll(){
+  if(busy)return;
+  Object.values(nodes).forEach(n=>n.el.remove());nodes={};items=[];
+  layout([],0,{});setStats(0);$('sSum').textContent='0';$('sD').classList.remove('on');
+  cap('The array is empty. Add a value to build it up from nothing.');
 }
 $('add').onclick=()=>add($('inp').value);
 $('rnd').onclick=()=>$('inp').value=1+Math.floor(Math.random()*MAXV);
 $('rst').onclick=()=>{if(!busy)reset()};
+$('clr').onclick=clearAll;
+$('rmv').onclick=()=>{
+  if(busy)return;const v=Math.round(+$('inp').value);
+  const it=sortItems(items).find(x=>x.v===v);
+  if(!it){cap('No element with value '+v+' to remove. Click a bar to remove it directly.');return}
+  remove(it.id);
+};
 $('inp').addEventListener('keydown',e=>{if(e.key==='Enter')add($('inp').value)});
 addEventListener('resize',()=>{if(busy)return;const s=sortItems(items),m=median(s);layout(s,m,{dist:true,markMedian:true})});
 reset();

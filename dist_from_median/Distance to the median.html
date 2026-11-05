@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Distance to the median</title>
+<style>
+:root{--bg:#f6f7f4;--panel:#fff;--ink:#1c2330;--mute:#677086;--line:#d9dde5;--bar:#c9d3e6;--med:#0f766e;--up:#d9480f;--dn:#2563eb;--new:#7c3aed;--good:#15803d;--bad:#b91c1c;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12151b;--panel:#1a1f28;--ink:#e8ebf2;--mute:#97a0b4;--line:#2d3442;--bar:#36415a;--med:#2dd4bf;--up:#fb923c;--dn:#60a5fa;--new:#c4a1ff;--good:#4ade80;--bad:#f87171;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12151b;--panel:#1a1f28;--ink:#e8ebf2;--mute:#97a0b4;--line:#2d3442;--bar:#36415a;--med:#2dd4bf;--up:#fb923c;--dn:#60a5fa;--new:#c4a1ff;--good:#4ade80;--bad:#f87171;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 Georgia,"Iowan Old Style",serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:1.6rem;margin:0 0 4px;font-weight:600}
+p.sub{margin:0 0 18px;color:var(--mute);max-width:62ch}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 16px;min-width:150px}
+.stat small{display:block;color:var(--mute);font:13px system-ui,sans-serif}
+.stat b{font:600 28px/1.2 system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.stat .d{font:600 15px system-ui,sans-serif;margin-left:8px;opacity:0;transition:opacity .4s}
+.stat .d.on{opacity:1}
+.stat.sum{border-color:var(--med)}
+#wrap{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow-x:auto}
+#chart{position:relative;height:350px;margin:0 14px;min-width:560px}
+#base{position:absolute;left:0;right:0;bottom:40px;border-top:1px solid var(--ink);opacity:.5}
+#medline{position:absolute;left:0;right:0;height:0;border-top:2px dashed var(--med);transition:bottom 1s ease;z-index:3}
+#medline span{position:absolute;right:0;top:-24px;background:var(--med);color:var(--panel);font:600 13px system-ui,sans-serif;padding:1px 8px;border-radius:4px;white-space:nowrap}
+.col{position:absolute;top:0;bottom:0;transition:left .9s ease,opacity .5s}
+.bar{position:absolute;bottom:40px;left:18%;right:18%;background:var(--bar);border-radius:4px 4px 0 0;transition:height .9s ease,background .4s,box-shadow .4s}
+.bar i{position:absolute;top:4px;left:0;right:0;text-align:center;font:600 13px system-ui,sans-serif;font-style:normal}
+.col.med .bar{box-shadow:0 0 0 3px var(--med)}
+.col.new .bar{background:var(--new);color:#fff}
+.stem{position:absolute;left:calc(50% - 2px);width:4px;border-radius:2px;transition:bottom 1s ease,height 1s ease,opacity .4s;z-index:2}
+.stem.up{background:var(--up)}.stem.dn{background:var(--dn)}
+.chip{position:absolute;left:0;right:0;text-align:center;font:600 13px system-ui,sans-serif;transition:bottom 1s ease,opacity .4s;z-index:4;white-space:nowrap}
+.chip span{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:0 6px}
+.delta{position:absolute;left:0;right:0;bottom:6px;text-align:center;font:600 13px system-ui,sans-serif;opacity:0;transition:opacity .5s}
+.delta.on{opacity:1}
+#cap{margin:12px 0;min-height:3em;font:15px/1.4 system-ui,sans-serif}
+.ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font:15px system-ui,sans-serif}
+.ctl input{width:80px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit}
+button{padding:8px 16px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;cursor:pointer}
+button.p{background:var(--med);color:var(--panel);border-color:var(--med);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible{outline:2px solid var(--med);outline-offset:2px}
+.key{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;color:var(--mute);font:13px system-ui,sans-serif}
+.key s{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-1px;margin-right:5px;text-decoration:none}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01s!important}}
+</style>
+</head>
+<body>
+<main>
+<h1>How far is every element from the median?</h1>
+<p class="sub">Bars are kept in sorted order. The orange and blue stems measure each element’s distance to the median. Add a number and watch the median move and every distance change.</p>
+<div class="stats">
+<div class="stat"><small>Median</small><b id="sMed">–</b></div>
+<div class="stat sum"><small>Sum of |x − median|</small><b id="sSum">0</b><span class="d" id="sD"></span></div>
+<div class="stat"><small>Elements</small><b id="sN">0</b></div>
+</div>
+<div id="wrap"><div id="chart"><div id="base"></div><div id="medline"><span id="medlbl"></span></div></div></div>
+<div id="cap"></div>
+<div class="ctl">
+<label for="inp">New value (1–60)</label>
+<input id="inp" type="number" min="1" max="60" value="55">
+<button class="p" id="add">Add element</button>
+<button id="rnd">Random value</button>
+<button id="rst">Reset</button>
+</div>
+<div class="key"><span><s style="background:var(--med)"></s>median</span><span><s style="background:var(--up)"></s>above median</span><span><s style="background:var(--dn)"></s>below median</span><span><s style="background:var(--new)"></s>new element</span><span style="color:var(--bad)">▲ distance grew</span><span style="color:var(--good)">▼ distance shrank</span></div>
+</main>
+<script>
+const MAXV=60, H=270, BASE=40, S=H/MAXV;
+const chart=document.getElementById('chart'), medline=document.getElementById('medline');
+const $=id=>document.getElementById(id);
+const INIT=[4,9,15,22,31,38,47];
+let items=[], nextId=0, nodes={}, busy=false, sumShown=0;
+
+const fmt=x=>Number.isInteger(x)?String(x):x.toFixed(1);
+const sortItems=a=>[...a].sort((x,y)=>x.v-y.v||x.id-y.id);
+function median(sorted){const n=sorted.length;if(!n)return 0;return n%2?sorted[(n-1)/2].v:(sorted[n/2-1].v+sorted[n/2].v)/2}
+const slot=n=>Math.min(72,chart.clientWidth/Math.max(n,1));
+
+function makeNode(it){
+  const c=document.createElement('div');c.className='col';c.style.opacity=0;
+  c.innerHTML='<div class="bar"><i></i></div><div class="stem"></div><div class="chip"><span></span></div><div class="delta"></div>';
+  c.querySelector('i').textContent=it.v;
+  chart.appendChild(c);nodes[it.id]={el:c,d:null};return nodes[it.id];
+}
+// order: array of items in display order; m: median; showDist: ids shown with distances
+function layout(order,m,opt={}){
+  const n=order.length, w=slot(n), off=(chart.clientWidth-w*n)/2;
+  const mid=order.length?(order.length%2?[(order.length-1)/2]:[order.length/2-1,order.length/2]):[];
+  order.forEach((it,i)=>{
+    const nd=nodes[it.id]||makeNode(it), c=nd.el;
+    c.style.width=w+'px';c.style.left=(off+i*w)+'px';c.style.opacity=1;
+    c.classList.toggle('new',it.id===opt.newId);
+    c.classList.toggle('med',!!opt.markMedian&&mid.includes(i));
+    const bar=c.querySelector('.bar');bar.style.height=(it.v*S)+'px';
+    const stem=c.querySelector('.stem'),chip=c.querySelector('.chip'),dl=c.querySelector('.delta');
+    const show=opt.dist&&!(opt.hideId===it.id);
+    if(show){
+      const d=Math.abs(it.v-m), lo=Math.min(it.v,m), hi=Math.max(it.v,m);
+      stem.className='stem '+(it.v>=m?'up':'dn');
+      stem.style.bottom=(BASE+lo*S)+'px';stem.style.height=(d*S)+'px';stem.style.opacity=1;
+      chip.style.bottom=(BASE+hi*S+6)+'px';chip.style.opacity=1;chip.firstChild.textContent=fmt(d);
+      if(opt.deltas){
+        const old=nd.d, diff=old==null?d:d-old;
+        if(old==null){dl.textContent='new';dl.style.color='var(--new)'}
+        else if(Math.abs(diff)<1e-9){dl.textContent='±0';dl.style.color='var(--mute)'}
+        else{dl.textContent=(diff>0?'▲ +':'▼ −')+fmt(Math.abs(diff));dl.style.color=diff>0?'var(--bad)':'var(--good)'}
+        dl.classList.add('on');
+      }
+      nd.pending=d;
+    }else{stem.style.opacity=0;chip.style.opacity=0;stem.style.height='0px';stem.style.bottom=(BASE+it.v*S)+'px'}
+    if(!opt.deltas)dl.classList.remove('on');
+  });
+  medline.style.bottom=(BASE+m*S)+'px';
+  $('medlbl').textContent='median '+fmt(m);
+}
+function commitDistances(m){Object.keys(nodes).forEach(id=>{const it=items.find(x=>x.id==id);if(it)nodes[id].d=Math.abs(it.v-m)})}
+function total(m){return items.reduce((s,x)=>s+Math.abs(x.v-m),0)}
+function tween(from,to,ms=1000){
+  const t0=performance.now();
+  (function f(t){const k=Math.min(1,(t-t0)/ms),e=1-Math.pow(1-k,3);$('sSum').textContent=fmt(from+(to-from)*e);if(k<1)requestAnimationFrame(f)})(t0);
+}
+function setStats(m){$('sMed').textContent=items.length?fmt(m):'–';$('sN').textContent=items.length}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const cap=t=>$('cap').innerHTML=t;
+
+function reset(){
+  Object.values(nodes).forEach(n=>n.el.remove());nodes={};nextId=0;
+  items=INIT.map(v=>({id:nextId++,v}));
+  const s=sortItems(items),m=median(s);
+  layout(s,m,{dist:true,markMedian:true});commitDistances(m);
+  sumShown=total(m);$('sSum').textContent=fmt(sumShown);setStats(m);
+  $('sD').classList.remove('on');
+  cap('Start: '+s.map(x=>x.v).join(', ')+'. The median is <b>'+fmt(m)+'</b>. Distances sum to <b>'+fmt(sumShown)+'</b>. Pick a value and press “Add element”.');
+}
+async function add(v){
+  if(busy)return;v=Math.round(+v);
+  if(!(v>=1&&v<=MAXV)){cap('Enter a whole number from 1 to '+MAXV+'.');return}
+  if(items.length>=14){cap('That is plenty of bars. Press Reset to start over.');return}
+  busy=true;['add','rnd','rst'].forEach(i=>$(i).disabled=true);$('sD').classList.remove('on');
+  const oldSorted=sortItems(items), oldM=median(oldSorted), oldSum=total(oldM);
+  const it={id:nextId++,v};
+  // 1. new element arrives at the right end
+  cap('Adding <b>'+v+'</b>. It arrives at the end of the array, outside the sorted order.');
+  layout([...oldSorted,it],oldM,{dist:true,markMedian:true,hideId:it.id,newId:it.id});
+  await wait(1500);
+  // 2. sort it into place
+  items.push(it);
+  const s=sortItems(items), m=median(s), rank=s.findIndex(x=>x.id===it.id);
+  cap('<b>'+v+'</b> slides to position '+(rank+1)+' of '+s.length+' in sorted order. The median is recalculated: <b>'+fmt(oldM)+' → '+fmt(m)+'</b>.');
+  layout(s,oldM,{dist:true,markMedian:false,hideId:it.id,newId:it.id});
+  await wait(1400);
+  // 3. median moves, distances shift
+  layout(s,m,{dist:true,markMedian:true,deltas:true,newId:it.id});
+  setStats(m);
+  const newSum=total(m);tween(oldSum,newSum);
+  const diff=newSum-oldSum, dd=$('sD');
+  dd.textContent=(diff>0?'▲ +':diff<0?'▼ −':'±')+fmt(Math.abs(diff));dd.style.color=diff>0?'var(--bad)':diff<0?'var(--good)':'var(--mute)';dd.classList.add('on');
+  await wait(1200);
+  const added=Math.abs(v-m);
+  cap('The median moved from '+fmt(oldM)+' to <b>'+fmt(m)+'</b>, so every existing element’s distance changed (badges under the bars). The new element adds <b>'+fmt(added)+'</b>. Total: <b>'+fmt(oldSum)+' → '+fmt(newSum)+'</b>.');
+  commitDistances(m);
+  busy=false;['add','rnd','rst'].forEach(i=>$(i).disabled=false);
+  $('inp').value=1+Math.floor(Math.random()*MAXV);
+}
+$('add').onclick=()=>add($('inp').value);
+$('rnd').onclick=()=>$('inp').value=1+Math.floor(Math.random()*MAXV);
+$('rst').onclick=()=>{if(!busy)reset()};
+$('inp').addEventListener('keydown',e=>{if(e.key==='Enter')add($('inp').value)});
+addEventListener('resize',()=>{if(busy)return;const s=sortItems(items),m=median(s);layout(s,m,{dist:true,markMedian:true})});
+reset();
+</script>
+</body>
+</html>
